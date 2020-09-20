@@ -13,7 +13,7 @@ use crate::opcodes::Opcode;
 use std::env;
 use std::fs::File;
 use std::io::Read;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -95,15 +95,13 @@ fn test_display() {
     let mut vram = VideoMemory::new();
     let id = vram.attach(TerminalVideoListener::new()).unwrap();
 
-    let stop = Arc::new(Mutex::new(false));
-
-    let stop_clone = stop.clone();
-    ctrlc::set_handler(move || *stop_clone.lock().unwrap() = true).unwrap();
+    let (tx, rx) = mpsc::sync_channel(0);
+    ctrlc::set_handler(move || tx.send(()).unwrap()).unwrap();
 
     'main: loop {
         for y in 0..VideoMemory::BIT_HEIGHT {
             for x in 0..VideoMemory::BIT_WIDTH {
-                if *stop.lock().unwrap() {
+                if rx.try_recv().is_ok() {
                     break 'main;
                 }
 
