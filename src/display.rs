@@ -2,19 +2,19 @@ use crate::core::{Error, ResultChip8, VoidResultChip8};
 use std::collections::HashMap;
 use std::io::{self, Write};
 
-trait VideoListener {
-    fn onAttach(&mut self, memory: &mut VideoMemory) -> VoidResultChip8 {
+pub trait VideoListener {
+    fn on_attach(&mut self, _memory: &mut VideoMemory) -> VoidResultChip8 {
         Ok(())
     }
 
-    fn onChange(&mut self, x: usize, y: usize, value: bool) -> VoidResultChip8 {
+    fn on_change(&mut self, _x: usize, _y: usize, _value: bool) -> VoidResultChip8 {
         Ok(())
     }
 
-    fn onClear(&mut self) -> VoidResultChip8 {
+    fn on_clear(&mut self) -> VoidResultChip8 {
         Ok(())
     }
-    fn onDetach(&mut self, memory: &mut VideoMemory) -> VoidResultChip8 {
+    fn on_detach(&mut self, _memory: &mut VideoMemory) -> VoidResultChip8 {
         Ok(())
     }
 }
@@ -64,7 +64,7 @@ impl VideoMemory {
         }
 
         for listener in self.listeners.values_mut() {
-            listener.onChange(x, y, value)?;
+            listener.on_change(x, y, value)?;
         }
 
         Ok(old_bit == 1)
@@ -82,7 +82,7 @@ impl VideoMemory {
         let bit = (self.data[byte_index] >> bit_offset) & 1;
 
         for listener in self.listeners.values_mut() {
-            listener.onChange(x, y, bit == 1)?;
+            listener.on_change(x, y, bit == 1)?;
         }
 
         Ok(bit == 1)
@@ -92,7 +92,7 @@ impl VideoMemory {
         self.data = [0; VideoMemory::VRAM_LEN];
 
         for listener in self.listeners.values_mut() {
-            listener.onClear()?;
+            listener.on_clear()?;
         }
 
         Ok(())
@@ -121,7 +121,7 @@ impl VideoMemory {
         T: VideoListener + 'static,
     {
         let mut listener_box = Box::new(listener);
-        listener_box.onAttach(self)?;
+        listener_box.on_attach(self)?;
 
         let id = self.next_listener_id;
         self.next_listener_id += 1;
@@ -133,7 +133,7 @@ impl VideoMemory {
     pub fn detach(&mut self, id: u8) -> VoidResultChip8 {
         match self.listeners.remove(&id) {
             None => Ok(()),
-            Some(mut x) => x.onDetach(self),
+            Some(mut x) => x.on_detach(self),
         }
     }
 }
@@ -160,7 +160,7 @@ impl TerminalVideoListener {
 }
 
 impl VideoListener for TerminalVideoListener {
-    fn onAttach(&mut self, _: &mut VideoMemory) -> VoidResultChip8 {
+    fn on_attach(&mut self, _: &mut VideoMemory) -> VoidResultChip8 {
         if self.started {
             return Ok(());
         }
@@ -175,7 +175,7 @@ impl VideoListener for TerminalVideoListener {
         Ok(())
     }
 
-    fn onDetach(&mut self, _: &mut VideoMemory) -> VoidResultChip8 {
+    fn on_detach(&mut self, _: &mut VideoMemory) -> VoidResultChip8 {
         if !self.started {
             return Ok(());
         }
@@ -187,7 +187,7 @@ impl VideoListener for TerminalVideoListener {
         Ok(())
     }
 
-    fn onChange(&mut self, x: usize, y: usize, value: bool) -> VoidResultChip8 {
+    fn on_change(&mut self, x: usize, y: usize, value: bool) -> VoidResultChip8 {
         // Cursor to (x; y)
         csi(b"")?;
         print!("{};{}H", y + 1, x + 1);
@@ -202,7 +202,7 @@ impl VideoListener for TerminalVideoListener {
         Ok(())
     }
 
-    fn onClear(&mut self) -> VoidResultChip8 {
+    fn on_clear(&mut self) -> VoidResultChip8 {
         csi(b"2J")?; // Clear screen
         flush()?;
         Ok(())
