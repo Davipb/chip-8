@@ -3,7 +3,7 @@ use std::io;
 use std::ops::{Add, Sub, AddAssign, SubAssign};
 use std::num::Wrapping;
 use std::borrow::Cow;
-use std::option;
+use std::convert::TryInto;
 
 pub type ResultChip8<T> = Result<T, Error>;
 pub type VoidResultChip8 = ResultChip8<()>;

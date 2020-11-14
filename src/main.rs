@@ -1,6 +1,7 @@
 mod core;
 mod cpu;
 mod display;
+mod input;
 mod memory;
 mod opcodes;
 mod registers;
@@ -8,11 +9,12 @@ mod timers;
 
 use crate::core::Address;
 use crate::display::{TerminalVideoListener, VideoMemory};
+use crate::input::{InputManager, KEY_NUM};
 use crate::opcodes::Opcode;
 
 use std::env;
 use std::fs::File;
-use std::io::Read;
+use std::io::{self, Read, Write};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -34,6 +36,7 @@ fn main() {
         "run" => unimplemented!(),
         "view" => disassemble(&args),
         "test_display" => test_display(),
+        "test_input" => test_input(),
         _ => print_help(),
     }
 }
@@ -45,6 +48,8 @@ fn print_help() {
     println!("\tprint a disassembly of the ROM located at <path>");
     println!("chip8 test_display");
     println!("\ttests the terminal display mode");
+    println!("chip8 test_input");
+    println!("\ttests the terminal input manager");
 }
 
 fn disassemble(args: &Vec<String>) {
@@ -112,4 +117,31 @@ fn test_display() {
     }
 
     vram.detach(id).unwrap();
+}
+
+fn test_input() {
+    let mut input = InputManager::new();
+    let (tx, rx) = mpsc::sync_channel(0);
+    ctrlc::set_handler(move || tx.send(()).unwrap()).unwrap();
+
+    // Clear screen and hide cursor
+    io::stdout().write(b"\x1B[m\x1B[2J\x1B[?25l").unwrap();
+
+    loop {
+        if rx.try_recv().is_ok() {
+            break;
+        }
+
+        input.tick().unwrap();
+
+        // Cursor to top-left
+        io::stdout().write(b"\x1B[H\x1B[?25l").unwrap();
+
+        for i in 0..KEY_NUM {
+            let state = input.is_down(i).unwrap();
+            println!("{:X}: {}", i, if state { "Down" } else { "Up  " })
+        }
+
+        thread::sleep(Duration::from_millis(50));
+    }
 }
