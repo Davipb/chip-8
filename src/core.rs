@@ -1,9 +1,9 @@
 use std::fmt::{self, Display, Debug, Formatter};
 use std::io;
-use std::ops::{Add, Sub, AddAssign, SubAssign};
+use std::ops::{Add, Sub, BitOr, BitAnd, BitXor, AddAssign, SubAssign, Index, IndexMut};
 use std::num::Wrapping;
 use std::borrow::Cow;
-use std::convert::TryInto;
+use ctrlc;
 
 pub type ResultChip8<T> = Result<T, Error>;
 pub type VoidResultChip8 = ResultChip8<()>;
@@ -57,6 +57,12 @@ impl From<io::Error> for Error {
 impl From<fmt::Error> for Error {
     fn from(_: fmt::Error) -> Error {
         Error::new_str("Formatting error")
+    }
+}
+
+impl From<ctrlc::Error> for Error {
+    fn from(other: ctrlc::Error) -> Error {
+        Error::new(other.to_string())
     }
 }
 
@@ -116,29 +122,57 @@ impl From<Word> for Cow<'_, Word> {
     }
 }
 
-impl Add for Word {
+impl<T> Add<T> for Word where T : Into<Word> {
     type Output = Word;
-    fn add(self, rhs: Word) -> Word {
+    fn add(self, rhs: T) -> Word {
+        let rhs: Word = rhs.into();
         (self.0 + rhs.0).0.into()
     }
 }
 
-impl AddAssign for Word {
-    fn add_assign(&mut self, rhs: Word) {
+impl<T> AddAssign<T> for Word where T : Into<Word> {
+    fn add_assign(&mut self, rhs: T) {
+        let rhs: Word = rhs.into();
         self.0 += rhs.0;
     }
 }
 
-impl Sub for Word {
+impl<T> Sub<T> for Word where T : Into<Word> {
     type Output = Word;
-    fn sub(self, rhs: Word) -> Word {
+    fn sub(self, rhs: T) -> Word {
+        let rhs: Word = rhs.into();
         (self.0 - rhs.0).0.into()
     }
 }
 
-impl SubAssign for Word {
-    fn sub_assign(&mut self, rhs: Word) {
+impl<T> SubAssign<T> for Word where T : Into<Word> {
+    fn sub_assign(&mut self, rhs: T) {
+        let rhs: Word = rhs.into();
         self.0 -= rhs.0;
+    }
+}
+
+impl<T> BitAnd<T> for Word where T : Into<Word> {
+    type Output = Word;
+    fn bitand(self, rhs: T) -> Word {
+        let rhs: Word = rhs.into();
+        (self.0 & rhs.0).0.into()
+    }
+}
+
+impl<T> BitOr<T> for Word where T : Into<Word> {
+    type Output = Word;
+    fn bitor(self, rhs: T) -> Word {
+        let rhs: Word = rhs.into();
+        (self.0 | rhs.0).0.into()
+    }
+}
+
+impl<T> BitXor<T> for Word where T : Into<Word> {
+    type Output = Word;
+    fn bitxor(self, rhs: T) -> Word {
+        let rhs: Word = rhs.into();
+        (self.0 ^ rhs.0).0.into()
     }
 }
 
@@ -177,6 +211,12 @@ impl From<usize> for Address {
     }
 }
 
+impl From<i32> for Address {
+    fn from(x: i32) -> Self {
+        Address::new(x as u16)
+    }
+}
+
 impl From<Address> for u16 {
     fn from(x: Address) -> Self {
         x.0.0
@@ -189,52 +229,50 @@ impl From<u16> for Address {
     }
 }
 
+impl From<u8> for Address {
+    fn from(x: u8) -> Self {
+        Address::new(x)
+    }
+}
+
+impl From<Word> for Address {
+    fn from(x: Word) -> Self {
+        Address::new(x)
+    }
+}
+
 impl From<Address> for Cow<'_, Address> {
     fn from(x: Address) -> Self {
         Cow::Owned(x)
     }
 }
 
-impl Add for Address {
+impl<T> Add<T> for Address where T : Into<Address> {
     type Output = Address;
-    fn add(self, rhs: Address) -> Address {
+    fn add(self, rhs: T) -> Address {
+        let rhs: Address = rhs.into();
         (self.0 + rhs.0).0.into()
     }
 }
 
-impl Add<Word> for Address {
-    type Output = Address;
-    fn add(self, rhs: Word) -> Address {
-        let rhs = Wrapping(rhs.into());
-        (self.0 + rhs).0.into()
+impl<T> AddAssign<T> for Address where T : Into<Address> {
+    fn add_assign(&mut self, rhs: T) {
+        let rhs: Address = rhs.into();
+        self.0 += rhs.0;
     }
 }
 
-impl Add<u16> for Address {
+impl<T> Sub<T> for Address where T : Into<Address> {
     type Output = Address;
-    fn add(self, rhs: u16) -> Address {
-        (self.0 + Wrapping(rhs)).0.into()
-    }
-}
-
-impl Add<u8> for Address {
-    type Output = Address;
-    fn add(self, rhs: u8) -> Address {
-        (self.0 + Wrapping(rhs as u16)).0.into()
-    }
-}
-
-impl Sub for Address {
-    type Output = Address;
-    fn sub(self, rhs: Address) -> Address {
+    fn sub(self, rhs: T) -> Address {
+        let rhs: Address = rhs.into();
         (self.0 - rhs.0).0.into()
     }
 }
 
-impl Sub<Word> for Address {
-    type Output = Address;
-    fn sub(self, rhs: Word) -> Address {
-        let rhs = Wrapping(rhs.into());
-        (self.0 - rhs).0.into()
+impl<T> SubAssign<T> for Address where T : Into<Address> {
+    fn sub_assign(&mut self, rhs: T) {
+        let rhs: Address = rhs.into();
+        self.0 -= rhs.0;
     }
 }

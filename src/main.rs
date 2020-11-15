@@ -7,9 +7,11 @@ mod opcodes;
 mod registers;
 mod timers;
 
-use crate::core::Address;
+use crate::core::{Address, Error, ResultChip8, VoidResultChip8, Word};
+use crate::cpu::CPU;
 use crate::display::{TerminalVideoListener, VideoMemory};
 use crate::input::{InputManager, KEY_NUM};
+use crate::memory::{ByteArrayMemory, MemoryRange, WriteMemory};
 use crate::opcodes::Opcode;
 
 use std::env;
@@ -27,45 +29,78 @@ use ansi_term::{
 use ctrlc;
 
 fn main() {
+    ansi_term::enable_ansi_support().unwrap();
+
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        return print_help();
+        return print_help().unwrap();
     }
 
     match args[1].as_str() {
-        "run" => unimplemented!(),
+        "run" => run(&args),
         "view" => disassemble(&args),
-        "test_display" => test_display(),
-        "test_input" => test_input(),
+        "test-display" => test_display(),
+        "test-input" => test_input(),
         _ => print_help(),
     }
+    .unwrap();
 }
 
-fn print_help() {
+fn print_help() -> VoidResultChip8 {
     println!("chip8 run <path>");
     println!("\temulate the ROM located at <path>");
     println!("chip8 view <path>");
     println!("\tprint a disassembly of the ROM located at <path>");
-    println!("chip8 test_display");
+    println!("chip8 test-display");
     println!("\ttests the terminal display mode");
-    println!("chip8 test_input");
+    println!("chip8 test-input");
     println!("\ttests the terminal input manager");
+    Ok(())
 }
 
-fn disassemble(args: &Vec<String>) {
+fn run(args: &Vec<String>) -> VoidResultChip8 {
     if args.len() != 3 {
         return print_help();
     }
 
-    let mut file = File::open(&args[2]).unwrap();
+    let mut file = File::open(&args[2])?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
 
-    let mut buffer = Vec::with_capacity(0x1000);
-    file.read_to_end(&mut buffer).unwrap();
-    if buffer.len() % 2 != 0 {
-        panic!("File size isn't a multiple of two")
+    let mut cpu = CPU::new();
+    cpu.memory.add(
+        ByteArrayMemory::zero(0x1000 - 0x200),
+        MemoryRange::new(0x200, 0xFFF),
+        "Main Memory".to_owned(),
+    )?;
+
+    for i in 0..buffer.len() {
+        let addr = Address::new(0x200 + i as u16);
+        let word = Word::new(buffer[i]);
+        cpu.memory.set(addr, word)?;
     }
 
-    ansi_term::enable_ansi_support().unwrap();
+    cpu.vram.attach(TerminalVideoListener::new())?;
+
+    loop {
+        cpu.tick()?;
+    }
+
+    Ok(())
+}
+
+fn disassemble(args: &Vec<String>) -> VoidResultChip8 {
+    if args.len() != 3 {
+        return print_help();
+    }
+
+    let mut file = File::open(&args[2])?;
+
+    let mut buffer = Vec::with_capacity(0x1000);
+    file.read_to_end(&mut buffer)?;
+    if buffer.len() % 2 != 0 {
+        return Err(Error::new_str("File size isn't a multiple of two"));
+    }
 
     let mut i = 0;
     while i < buffer.len() {
@@ -80,6 +115,8 @@ fn disassemble(args: &Vec<String>) {
         }
         i += 2;
     }
+
+    Ok(())
 }
 
 fn color_opcode<'a>(code: Opcode) -> ANSIString<'a> {
@@ -94,14 +131,12 @@ fn color_opcode<'a>(code: Opcode) -> ANSIString<'a> {
     }
 }
 
-fn test_display() {
-    ansi_term::enable_ansi_support().unwrap();
-
+fn test_display() -> VoidResultChip8 {
     let mut vram = VideoMemory::new();
-    let id = vram.attach(TerminalVideoListener::new()).unwrap();
+    let id = vram.attach(TerminalVideoListener::new())?;
 
     let (tx, rx) = mpsc::sync_channel(0);
-    ctrlc::set_handler(move || tx.send(()).unwrap()).unwrap();
+    ctrlc::set_handler(move || tx.send(()).unwrap())?;
 
     'main: loop {
         for y in 0..VideoMemory::BIT_HEIGHT {
@@ -110,38 +145,41 @@ fn test_display() {
                     break 'main;
                 }
 
-                vram.flip(x, y).unwrap();
+                vram.flip(x, y)?;
             }
             thread::sleep(Duration::from_millis(1));
         }
     }
 
-    vram.detach(id).unwrap();
+    vram.detach(id)?;
+    Ok(())
 }
 
-fn test_input() {
+fn test_input() -> VoidResultChip8 {
     let mut input = InputManager::new();
     let (tx, rx) = mpsc::sync_channel(0);
-    ctrlc::set_handler(move || tx.send(()).unwrap()).unwrap();
+    ctrlc::set_handler(move || tx.send(()).unwrap())?;
 
     // Clear screen and hide cursor
-    io::stdout().write(b"\x1B[m\x1B[2J\x1B[?25l").unwrap();
+    io::stdout().write(b"\x1B[m\x1B[2J\x1B[?25l")?;
 
     loop {
         if rx.try_recv().is_ok() {
             break;
         }
 
-        input.tick().unwrap();
+        input.tick()?;
 
         // Cursor to top-left
-        io::stdout().write(b"\x1B[H\x1B[?25l").unwrap();
+        io::stdout().write(b"\x1B[H\x1B[?25l")?;
 
         for i in 0..KEY_NUM {
-            let state = input.is_down(i).unwrap();
+            let state = input.is_down(i)?;
             println!("{:X}: {}", i, if state { "Down" } else { "Up  " })
         }
 
         thread::sleep(Duration::from_millis(50));
     }
+
+    Ok(())
 }

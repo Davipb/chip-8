@@ -1,9 +1,10 @@
 use crate::core::{Address, Error, ResultChip8, Word};
+use std::cmp::PartialEq;
 use std::fmt::{self, Display, Formatter};
 
 pub type ValueRegisterIndex = u8;
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum Opcode {
     // Value Registers
     Assign {
@@ -66,19 +67,28 @@ pub enum Opcode {
     LoadValueRegisters(ValueRegisterIndex),
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum OpcodeParam {
     Immediate(Word),
     Register(ValueRegisterIndex),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum Condition {
     Equal,
     NotEqual,
 }
 
-#[derive(Copy, Clone, Debug)]
+impl Condition {
+    pub fn evaluate<T: PartialEq>(&self, a: T, b: T) -> bool {
+        match self {
+            Condition::Equal => a == b,
+            Condition::NotEqual => a != b,
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum Operation {
     None,
     Add,
@@ -89,7 +99,33 @@ pub enum Operation {
     Xor,
 }
 
-#[derive(Copy, Clone, Debug)]
+impl Operation {
+    pub fn evaluate(&self, lhs: Word, rhs: Word) -> (Word, Option<bool>) {
+        match self {
+            Operation::None => (rhs, None),
+            Operation::Or => (rhs | lhs, None),
+            Operation::And => (rhs & lhs, None),
+            Operation::Xor => (rhs ^ lhs, None),
+            Operation::Add => {
+                let lhs: u8 = lhs.into();
+                let (result, carry) = lhs.overflowing_add(rhs.into());
+                (Word::new(result), Some(carry))
+            }
+            Operation::Sub => {
+                let lhs: u8 = lhs.into();
+                let (result, carry) = lhs.overflowing_add(rhs.into());
+                (Word::new(result), Some(!carry))
+            }
+            Operation::ReverseSub => {
+                let rhs: u8 = rhs.into();
+                let (result, carry) = rhs.overflowing_add(lhs.into());
+                (Word::new(result), Some(!carry))
+            }
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum Timer {
     Delay,
     Sound,
