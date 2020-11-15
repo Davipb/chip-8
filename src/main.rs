@@ -71,7 +71,7 @@ fn run(args: &Vec<String>) -> VoidResultChip8 {
     cpu.memory.add(
         ByteArrayMemory::zero(0x1000 - 0x200),
         MemoryRange::new(0x200, 0xFFF),
-        "Main Memory".to_owned(),
+        "Main Memory",
     )?;
 
     for i in 0..buffer.len() {

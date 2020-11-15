@@ -2,13 +2,35 @@ use crate::core::{Address, Error, ResultChip8, VoidResultChip8, Word};
 use std::fmt::{self, Display, Formatter, Write};
 use std::fs::File;
 use std::io::Read;
+use std::ops::Range;
 
 pub trait ReadMemory {
     fn get(&self, addr: Address) -> ResultChip8<Word>;
+
+    fn get_range(&self, range: MemoryRange) -> ResultChip8<Vec<Word>> {
+        let mut result = Vec::with_capacity(range.len().into());
+
+        for addr in range {
+            result.push(self.get(addr)?);
+        }
+
+        Ok(result)
+    }
 }
 
 pub trait WriteMemory {
     fn set(&mut self, addr: Address, value: Word) -> VoidResultChip8;
+
+    fn set_range(&mut self, start_addr: Address, values: &[Word]) -> VoidResultChip8 {
+        let mut addr = start_addr;
+
+        for value in values {
+            self.set(addr, value.clone())?;
+            addr += 1;
+        }
+
+        Ok(())
+    }
 }
 
 pub trait ReadWriteMemory: ReadMemory + WriteMemory {}
@@ -21,11 +43,22 @@ pub struct MemoryRange {
 }
 
 impl MemoryRange {
-    pub fn new(min: u16, max: u16) -> MemoryRange {
-        MemoryRange {
+    pub fn new(min: impl Into<Address>, max: impl Into<Address>) -> MemoryRange {
+        let range = MemoryRange {
             min: min.into(),
             max: max.into(),
+        };
+
+        if range.min > range.max {
+            panic!("Minimum value of range can't be greater than maximum value");
         }
+
+        range
+    }
+
+    pub fn new_len(start: impl Into<Address>, len: impl Into<Address>) -> MemoryRange {
+        let start: Address = start.into();
+        MemoryRange::new(start, start + len.into())
     }
 
     pub fn contains(&self, addr: Address) -> bool {
@@ -34,6 +67,42 @@ impl MemoryRange {
 
     pub fn overlaps(&self, other: &MemoryRange) -> bool {
         self.min <= other.max && other.min <= self.max
+    }
+
+    pub fn len(&self) -> Address {
+        self.max - self.min
+    }
+}
+
+impl IntoIterator for MemoryRange {
+    type Item = Address;
+    type IntoIter = MemoryRangeIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        MemoryRangeIterator {
+            current: self.min,
+            end: self.max,
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct MemoryRangeIterator {
+    current: Address,
+    end: Address,
+}
+
+impl Iterator for MemoryRangeIterator {
+    type Item = Address;
+
+    fn next(&mut self) -> Option<Address> {
+        if self.current > self.end {
+            None
+        } else {
+            let old = self.current;
+            self.current += 1;
+            Some(old)
+        }
     }
 }
 
@@ -102,7 +171,7 @@ impl MemoryMapper {
         &mut self,
         bank: impl ReadWriteMemory + 'static,
         range: MemoryRange,
-        name: String,
+        name: &str,
     ) -> VoidResultChip8 {
         let overlapping: Vec<&MemoryMapperBank> = self
             .banks
@@ -119,7 +188,7 @@ impl MemoryMapper {
         }
 
         self.banks.push(MemoryMapperBank {
-            name,
+            name: name.to_owned(),
             range,
             delegate: Box::new(bank),
         });
@@ -130,7 +199,7 @@ impl MemoryMapper {
         &mut self,
         bank: impl ReadMemory + 'static,
         range: MemoryRange,
-        name: String,
+        name: &str,
     ) -> VoidResultChip8 {
         self.add(ReadMemoryWrapper(bank), range, name)
     }
@@ -139,7 +208,7 @@ impl MemoryMapper {
         &mut self,
         bank: impl WriteMemory + 'static,
         range: MemoryRange,
-        name: String,
+        name: &str,
     ) -> VoidResultChip8 {
         self.add(WriteMemoryWrapper(bank), range, name)
     }
@@ -183,8 +252,13 @@ impl WriteMemory for MemoryMapper {
 pub struct ByteArrayMemory(Vec<Word>);
 
 impl ByteArrayMemory {
-    pub fn new(data: Vec<Word>) -> ByteArrayMemory {
-        ByteArrayMemory(data)
+    pub fn new<T: Into<Word> + Copy>(data: &[T]) -> ByteArrayMemory {
+        let mut vec = Vec::with_capacity(data.len());
+        for x in data {
+            vec.push(x.clone().into());
+        }
+
+        ByteArrayMemory(vec)
     }
 
     pub fn zero(size: usize) -> ByteArrayMemory {

@@ -1,6 +1,10 @@
 use std::fmt::{self, Display, Debug, Formatter};
 use std::io;
-use std::ops::{Add, Sub, BitOr, BitAnd, BitXor, AddAssign, SubAssign, Index, IndexMut};
+use std::ops::{
+    Add, Sub, Mul, Div, Rem, Shr, Shl, BitOr, BitAnd, BitXor, 
+    AddAssign, SubAssign, MulAssign, DivAssign, RemAssign, ShrAssign, ShlAssign,
+    Index, IndexMut
+};
 use std::num::Wrapping;
 use std::borrow::Cow;
 use ctrlc;
@@ -110,9 +114,27 @@ impl From<Word> for u16 {
     }
 }
 
+impl From<Word> for usize {
+    fn from(x: Word) -> Self {
+        Self::from(x.0.0)
+    }
+}
+
 impl From<u8> for Word {
     fn from(x: u8) -> Self {
         Self::new(x)
+    }
+}
+
+impl From<i32> for Word {
+    fn from(x: i32) -> Self {
+        Self::new(x as u8)
+    }
+}
+
+impl From<usize> for Word {
+    fn from(x: usize) -> Self {
+        Self::new(x as u8)
     }
 }
 
@@ -149,6 +171,81 @@ impl<T> SubAssign<T> for Word where T : Into<Word> {
     fn sub_assign(&mut self, rhs: T) {
         let rhs: Word = rhs.into();
         self.0 -= rhs.0;
+    }
+}
+
+impl<T> Mul<T> for Word where T : Into<Word> {
+    type Output = Word;
+    fn mul(self, rhs: T) -> Word {
+        let rhs: Word = rhs.into();
+        (self.0 * rhs.0).0.into()
+    }
+}
+
+impl<T> MulAssign<T> for Word where T : Into<Word> {
+    fn mul_assign(&mut self, rhs: T) {
+        let rhs: Word = rhs.into();
+        self.0 *= rhs.0;
+    }
+}
+
+impl<T> Div<T> for Word where T : Into<Word> {
+    type Output = Word;
+    fn div(self, rhs: T) -> Word {
+        let rhs: Word = rhs.into();
+        (self.0 / rhs.0).0.into()
+    }
+}
+
+impl<T> DivAssign<T> for Word where T : Into<Word> {
+    fn div_assign(&mut self, rhs: T) {
+        let rhs: Word = rhs.into();
+        self.0 /= rhs.0;
+    }
+}
+
+impl<T> Rem<T> for Word where T : Into<Word> {
+    type Output = Word;
+    fn rem(self, rhs: T) -> Word {
+        let rhs: Word = rhs.into();
+        (self.0 % rhs.0).0.into()
+    }
+}
+
+impl<T> RemAssign<T> for Word where T : Into<Word> {
+    fn rem_assign(&mut self, rhs: T) {
+        let rhs: Word = rhs.into();
+        self.0 %= rhs.0;
+    }
+}
+
+impl<T> Shr<T> for Word where T : Into<Word> {
+    type Output = Word;
+    fn shr(self, rhs: T) -> Word {
+        let rhs: Word = rhs.into();
+        (self.0.0 >> rhs.0.0).into()
+    }
+}
+
+impl<T> ShrAssign<T> for Word where T : Into<Word> {
+    fn shr_assign(&mut self, rhs: T) {
+        let rhs: Word = rhs.into();
+        self.0.0 >>= rhs.0.0;
+    }
+}
+
+impl<T> Shl<T> for Word where T : Into<Word> {
+    type Output = Word;
+    fn shl(self, rhs: T) -> Word {
+        let rhs: Word = rhs.into();
+        (self.0.0 << rhs.0.0).into()
+    }
+}
+
+impl<T> ShlAssign<T> for Word where T : Into<Word> {
+    fn shl_assign(&mut self, rhs: T) {
+        let rhs: Word = rhs.into();
+        self.0.0 <<= rhs.0.0;
     }
 }
 
@@ -217,6 +314,12 @@ impl From<i32> for Address {
     }
 }
 
+impl From<u32> for Address {
+    fn from(x: u32) -> Self {
+        Address::new(x as u16)
+    }
+}
+
 impl From<Address> for u16 {
     fn from(x: Address) -> Self {
         x.0.0
@@ -274,5 +377,104 @@ impl<T> SubAssign<T> for Address where T : Into<Address> {
     fn sub_assign(&mut self, rhs: T) {
         let rhs: Address = rhs.into();
         self.0 -= rhs.0;
+    }
+}
+
+impl<T> Mul<T> for Address where T : Into<Address> {
+    type Output = Address;
+    fn mul(self, rhs: T) -> Address {
+        let rhs: Address = rhs.into();
+        (self.0 * rhs.0).0.into()
+    }
+}
+
+impl<T> MulAssign<T> for Address where T : Into<Address> {
+    fn mul_assign(&mut self, rhs: T) {
+        let rhs: Address = rhs.into();
+        self.0 *= rhs.0;
+    }
+}
+
+impl<T> Div<T> for Address where T : Into<Address> {
+    type Output = Address;
+    fn div(self, rhs: T) -> Address {
+        let rhs: Address = rhs.into();
+        (self.0 / rhs.0).0.into()
+    }
+}
+
+impl<T> DivAssign<T> for Address where T : Into<Address> {
+    fn div_assign(&mut self, rhs: T) {
+        let rhs: Address = rhs.into();
+        self.0 /= rhs.0;
+    }
+}
+
+impl<T> Rem<T> for Address where T : Into<Address> {
+    type Output = Address;
+    fn rem(self, rhs: T) -> Address {
+        let rhs: Address = rhs.into();
+        (self.0 % rhs.0).0.into()
+    }
+}
+
+impl<T> RemAssign<T> for Address where T : Into<Address> {
+    fn rem_assign(&mut self, rhs: T) {
+        let rhs: Address = rhs.into();
+        self.0 %= rhs.0;
+    }
+}
+
+impl<T> Shr<T> for Address where T : Into<Address> {
+    type Output = Address;
+    fn shr(self, rhs: T) -> Address {
+        let rhs: Address = rhs.into();
+        (self.0.0 >> rhs.0.0).into()
+    }
+}
+
+impl<T> ShrAssign<T> for Address where T : Into<Address> {
+    fn shr_assign(&mut self, rhs: T) {
+        let rhs: Address = rhs.into();
+        self.0.0 >>= rhs.0.0;
+    }
+}
+
+impl<T> Shl<T> for Address where T : Into<Address> {
+    type Output = Address;
+    fn shl(self, rhs: T) -> Address {
+        let rhs: Address = rhs.into();
+        (self.0.0 << rhs.0.0).into()
+    }
+}
+
+impl<T> ShlAssign<T> for Address where T : Into<Address> {
+    fn shl_assign(&mut self, rhs: T) {
+        let rhs: Address = rhs.into();
+        self.0.0 <<= rhs.0.0;
+    }
+}
+
+impl<T> BitAnd<T> for Address where T : Into<Address> {
+    type Output = Address;
+    fn bitand(self, rhs: T) -> Address {
+        let rhs: Address = rhs.into();
+        (self.0 & rhs.0).0.into()
+    }
+}
+
+impl<T> BitOr<T> for Address where T : Into<Address> {
+    type Output = Address;
+    fn bitor(self, rhs: T) -> Address {
+        let rhs: Address = rhs.into();
+        (self.0 | rhs.0).0.into()
+    }
+}
+
+impl<T> BitXor<T> for Address where T : Into<Address> {
+    type Output = Address;
+    fn bitxor(self, rhs: T) -> Address {
+        let rhs: Address = rhs.into();
+        (self.0 ^ rhs.0).0.into()
     }
 }

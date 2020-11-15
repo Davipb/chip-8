@@ -99,15 +99,8 @@ impl VideoMemory {
     }
 
     fn get_index_offset(&self, x: usize, y: usize) -> ResultChip8<(usize, usize)> {
-        if x >= VideoMemory::BIT_WIDTH || y >= VideoMemory::BIT_HEIGHT {
-            return Err(Error::new(format!(
-                "Coordinates ({}; {}) are outside the allowed range of {}x{}",
-                x,
-                y,
-                VideoMemory::BIT_WIDTH,
-                VideoMemory::BIT_HEIGHT
-            )));
-        }
+        let x = x % VideoMemory::BIT_WIDTH;
+        let y = y % VideoMemory::BIT_HEIGHT;
 
         let bit_index = x + (y * VideoMemory::BIT_WIDTH);
         let byte_index = bit_index / 8;
@@ -203,6 +196,7 @@ impl VideoListener for TerminalVideoListener {
     }
 
     fn on_clear(&mut self) -> VoidResultChip8 {
+        csi(b"27m")?; // Set color to black
         csi(b"2J")?; // Clear screen
         flush()?;
         Ok(())

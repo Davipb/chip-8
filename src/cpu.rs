@@ -1,11 +1,13 @@
 use crate::core::{Address, Error, VoidResultChip8, Word};
 use crate::display::VideoMemory;
-use crate::input::InputManager;
-use crate::memory::{MemoryMapper, ReadMemory, WriteMemory};
+use crate::input::{InputManager, KEY_NUM};
+use crate::memory::{ByteArrayMemory, MemoryMapper, MemoryRange, ReadMemory, WriteMemory};
 use crate::opcodes::{Condition, Opcode, OpcodeParam};
 use crate::registers::Registers;
 use crate::timers::Timers;
 use rand::random;
+
+const DIGITS_ROM_DATA: &[u8; 0x50] = include_bytes!["digits.bin"];
 
 pub struct CPU {
     pub registers: Registers,
@@ -18,14 +20,23 @@ pub struct CPU {
 
 impl CPU {
     pub fn new() -> CPU {
-        CPU {
+        let mut cpu = CPU {
             registers: Registers::new(),
             timers: Timers::new(),
             memory: MemoryMapper::new(),
             stack: Vec::new(),
             vram: VideoMemory::new(),
             input: InputManager::new(),
-        }
+        };
+
+        let digits_rom = ByteArrayMemory::new(DIGITS_ROM_DATA);
+        cpu.memory.add_read(
+            digits_rom,
+            MemoryRange::new(0x000, DIGITS_ROM_DATA.len() - 1),
+            "Digits ROM",
+        );
+
+        cpu
     }
 
     pub fn tick(&mut self) -> VoidResultChip8 {
@@ -80,6 +91,12 @@ impl CPU {
                 Ok(())
             }
 
+            Opcode::GetCharacterAddress(reg) => {
+                let value = self.registers.values[reg as usize];
+                self.registers.address = (value * 5).into();
+                Ok(())
+            }
+
             // Flow Control
             Opcode::Return => {
                 let addr = self
@@ -119,8 +136,83 @@ impl CPU {
             // Graphics
             Opcode::ClearScreen => self.vram.clear(),
 
+            Opcode::Draw {
+                x: x_reg,
+                y: y_reg,
+                height,
+            } => {
+                let x: usize = self.registers.values[x_reg as usize].into();
+                let y: usize = self.registers.values[y_reg as usize].into();
+
+                let sprite = self
+                    .memory
+                    .get_range(MemoryRange::new_len(self.registers.address, height))?;
+
+                self.registers.values[0xF] = 0.into();
+
+                for dy in 0..height {
+                    let byte = sprite[dy as usize];
+                    for dx in 0..8 {
+                        let bit = ((byte >> (7 - dx)) & 1) == 1.into();
+                        if !bit {
+                            continue;
+                        }
+
+                        let unset = self.vram.flip(x + dx, y + (dy as usize))?;
+                        if unset {
+                            self.registers.values[0xF] = 1.into();
+                        }
+                    }
+                }
+
+                Ok(())
+            }
+
+            // IO
+            Opcode::BlockOnKey(reg) => {
+                increment_pc = false;
+
+                for i in 0..KEY_NUM {
+                    if self.input.is_down(i)? {
+                        self.registers.values[reg as usize] = i.into();
+                        increment_pc = true;
+                        break;
+                    }
+                }
+                Ok(())
+            }
+
             // Misc
             Opcode::Nop => Ok(()),
+
+            Opcode::WriteBCD(reg) => {
+                let value = self.registers.values[reg as usize];
+                let base_addr = self.registers.address + 2;
+
+                for i in 0..=2 {
+                    let addr = base_addr - i;
+                    let digit = (value / 10u8.pow(i)) % 10;
+                    self.memory.set(addr, digit)?;
+                }
+
+                Ok(())
+            }
+
+            Opcode::DumpValueRegisters(end) => {
+                for i in 0..=end {
+                    let addr = self.registers.address + i;
+                    self.memory.set(addr, self.registers.values[i as usize])?;
+                }
+                Ok(())
+            }
+
+            Opcode::LoadValueRegisters(end) => {
+                for i in 0..=end {
+                    let addr = self.registers.address + i;
+                    self.registers.values[i as usize] = self.memory.get(addr)?;
+                }
+                Ok(())
+            }
 
             x => unimplemented!("Opcode not supported: {}", x),
         }?;
