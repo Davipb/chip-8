@@ -113,12 +113,12 @@ impl Operation {
             }
             Operation::Sub => {
                 let lhs: u8 = lhs.into();
-                let (result, carry) = lhs.overflowing_add(rhs.into());
+                let (result, carry) = lhs.overflowing_sub(rhs.into());
                 (Word::new(result), Some(!carry))
             }
             Operation::ReverseSub => {
                 let rhs: u8 = rhs.into();
-                let (result, carry) = rhs.overflowing_add(lhs.into());
+                let (result, carry) = rhs.overflowing_sub(lhs.into());
                 (Word::new(result), Some(!carry))
             }
         }
@@ -132,6 +132,11 @@ pub enum Timer {
 }
 
 impl Opcode {
+    pub fn decode_bytes(bytes: &[impl Into<u8> + Clone; 2]) -> ResultChip8<Opcode> {
+        let value = u16::from_be_bytes([bytes[0].clone().into(), bytes[1].clone().into()]);
+        Opcode::decode(value)
+    }
+
     pub fn decode(value: u16) -> ResultChip8<Opcode> {
         if value == 0x0000 {
             return Ok(Opcode::Nop);

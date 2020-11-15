@@ -2,12 +2,16 @@ use crate::core::{Address, Error, VoidResultChip8, Word};
 use crate::display::VideoMemory;
 use crate::input::{InputManager, KEY_NUM};
 use crate::memory::{ByteArrayMemory, MemoryMapper, MemoryRange, ReadMemory, WriteMemory};
-use crate::opcodes::{Condition, Opcode, OpcodeParam};
+use crate::opcodes::{Condition, Opcode, OpcodeParam, Timer};
 use crate::registers::Registers;
 use crate::timers::Timers;
 use rand::random;
+use std::thread;
+use std::time::{Duration, Instant};
 
 const DIGITS_ROM_DATA: &[u8; 0x50] = include_bytes!["digits.bin"];
+const MIN_TICK_DURATION: Duration = Duration::from_millis(1);
+const SLEEP_THRESHOLD: Duration = Duration::from_millis(50);
 
 pub struct CPU {
     pub registers: Registers,
@@ -30,25 +34,46 @@ impl CPU {
         };
 
         let digits_rom = ByteArrayMemory::new(DIGITS_ROM_DATA);
-        cpu.memory.add_read(
-            digits_rom,
-            MemoryRange::new(0x000, DIGITS_ROM_DATA.len() - 1),
-            "Digits ROM",
-        );
+        cpu.memory
+            .add_read(
+                digits_rom,
+                MemoryRange::new(0x000, DIGITS_ROM_DATA.len() - 1),
+                "Digits ROM",
+            )
+            .expect("Unable to map digits ROM");
 
         cpu
+    }
+
+    pub fn tick_loop(&mut self) -> VoidResultChip8 {
+        let mut sleep_acc = Duration::from_millis(0);
+
+        loop {
+            let start = Instant::now();
+            self.tick()?;
+
+            let tick_duration = start.elapsed();
+
+            if tick_duration < MIN_TICK_DURATION {
+                sleep_acc += MIN_TICK_DURATION - tick_duration;
+            }
+
+            if sleep_acc > SLEEP_THRESHOLD {
+                thread::sleep(sleep_acc);
+                sleep_acc = Duration::from_millis(0);
+            }
+        }
     }
 
     pub fn tick(&mut self) -> VoidResultChip8 {
         self.timers.tick();
         self.input.tick()?;
 
-        let opcode_high = self.memory.get(self.registers.program_counter)?.into();
-        let opcode_low = self
+        let opcode_bytes = self
             .memory
-            .get(self.registers.program_counter + 1u16)?
-            .into();
-        let opcode = Opcode::decode(u16::from_be_bytes([opcode_high, opcode_low]))?;
+            .get_range(MemoryRange::new_len(self.registers.program_counter, 2))?;
+
+        let opcode = Opcode::decode_bytes(&[opcode_bytes[0], opcode_bytes[1]])?;
         self.interpret(opcode)?;
 
         Ok(())
@@ -80,6 +105,22 @@ impl CPU {
                 Ok(())
             }
 
+            Opcode::Shift { reg, right: true } => {
+                let value = self.registers.values[reg as usize];
+
+                self.registers.values[0xF] = value & 1;
+                self.registers.values[reg as usize] = value >> 1;
+                Ok(())
+            }
+
+            Opcode::Shift { reg, right: false } => {
+                let value = self.registers.values[reg as usize];
+
+                self.registers.values[0xF] = (value & 0b1000_0000) >> 7;
+                self.registers.values[reg as usize] = value << 1;
+                Ok(())
+            }
+
             Opcode::Random { reg, mask } => {
                 self.registers.values[reg as usize] = Word::new(random::<u8>()) & mask;
                 Ok(())
@@ -88,6 +129,12 @@ impl CPU {
             // Address Register
             Opcode::AssignAddress(addr) => {
                 self.registers.address = addr;
+                Ok(())
+            }
+
+            Opcode::AddAddress(reg) => {
+                let value = self.registers.values[reg as usize];
+                self.registers.address += value;
                 Ok(())
             }
 
@@ -158,8 +205,8 @@ impl CPU {
                             continue;
                         }
 
-                        let unset = self.vram.flip(x + dx, y + (dy as usize))?;
-                        if unset {
+                        let new_pixel = self.vram.flip(x + dx, y + (dy as usize))?;
+                        if !new_pixel {
                             self.registers.values[0xF] = 1.into();
                         }
                     }
@@ -179,6 +226,32 @@ impl CPU {
                         break;
                     }
                 }
+                Ok(())
+            }
+
+            Opcode::CondKeyJump { reg, cond } => {
+                let key = self.registers.values[reg as usize];
+                let down = self.input.is_down(key)?;
+
+                if cond.evaluate(down, true) {
+                    self.registers.program_counter += 2;
+                }
+
+                Ok(())
+            }
+
+            // Timers
+            Opcode::GetDelayTimer(reg) => {
+                self.registers.values[reg as usize] = self.timers.delay_timer;
+                Ok(())
+            }
+
+            Opcode::SetTimer { reg, timer } => {
+                let value = self.registers.values[reg as usize];
+                match timer {
+                    Timer::Delay => self.timers.delay_timer = value,
+                    Timer::Sound => self.timers.sound_timer = value,
+                };
                 Ok(())
             }
 
@@ -214,7 +287,7 @@ impl CPU {
                 Ok(())
             }
 
-            x => unimplemented!("Opcode not supported: {}", x),
+            x => Err(Error::new(format!("Opcode not supported: {}", x))),
         }?;
 
         if increment_pc {

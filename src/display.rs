@@ -131,6 +131,16 @@ impl VideoMemory {
     }
 }
 
+impl Drop for VideoMemory {
+    fn drop(&mut self) {
+        let ids: Vec<u8> = self.listeners.keys().map(Clone::clone).collect();
+        for id in ids {
+            self.detach(id)
+                .expect("Unable to detach listeners when dropping");
+        }
+    }
+}
+
 pub struct TerminalVideoListener {
     started: bool,
 }

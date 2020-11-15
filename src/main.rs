@@ -28,12 +28,27 @@ use ansi_term::{
 
 use ctrlc;
 
-fn main() {
-    ansi_term::enable_ansi_support().unwrap();
+fn main() -> VoidResultChip8 {
+    let result = do_main();
+
+    match &result {
+        Ok(_) => println!("Success"),
+        Err(err) => println!("Failed: {}", err),
+    };
+
+    let mut buf = [0];
+    io::stdin().read_exact(&mut buf)?;
+
+    result
+}
+
+fn do_main() -> VoidResultChip8 {
+    ansi_term::enable_ansi_support()
+        .map_err(|x| Error::new(format!("Unable to turn on ANSI support: Error code {}", x)))?;
 
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        return print_help().unwrap();
+        return print_help();
     }
 
     match args[1].as_str() {
@@ -43,14 +58,14 @@ fn main() {
         "test-input" => test_input(),
         _ => print_help(),
     }
-    .unwrap();
 }
 
 fn print_help() -> VoidResultChip8 {
     println!("chip8 run <path>");
     println!("\temulate the ROM located at <path>");
-    println!("chip8 view <path>");
+    println!("chip8 view [-o] <path>");
     println!("\tprint a disassembly of the ROM located at <path>");
+    println!("\t-o: Offset output by 1 byte");
     println!("chip8 test-display");
     println!("\ttests the terminal display mode");
     println!("chip8 test-input");
@@ -82,38 +97,46 @@ fn run(args: &Vec<String>) -> VoidResultChip8 {
 
     cpu.vram.attach(TerminalVideoListener::new())?;
 
-    loop {
-        cpu.tick()?;
-    }
-
-    Ok(())
+    cpu.tick_loop()
 }
 
 fn disassemble(args: &Vec<String>) -> VoidResultChip8 {
-    if args.len() != 3 {
+    if args.len() < 3 || args.len() > 4 {
         return print_help();
     }
 
-    let mut file = File::open(&args[2])?;
+    let (mut file, offset) = if args.len() == 3 {
+        (File::open(&args[2])?, false)
+    } else if args[2] != "-o" {
+        return print_help();
+    } else {
+        (File::open(&args[3])?, true)
+    };
 
     let mut buffer = Vec::with_capacity(0x1000);
     file.read_to_end(&mut buffer)?;
-    if buffer.len() % 2 != 0 {
-        return Err(Error::new_str("File size isn't a multiple of two"));
-    }
 
     let mut i = 0;
     while i < buffer.len() {
         let addr = Address::new(0x0200 + i as u16);
-        let value = u16::from_be_bytes([buffer[i], buffer[i + 1]]);
 
-        print!("{} | {:04X}: ", Blue.paint(addr.to_string()), value);
+        print!("{} | ", Blue.paint(addr.to_string()));
 
-        match Opcode::decode(value) {
-            Err(x) => println!("{} {}", Red.paint("ERROR"), Red.paint(x.to_string())),
-            Ok(x) => println!("{}", color_opcode(x)),
-        }
-        i += 2;
+        if i == 0 && offset {
+            println!("__{:02X}: Lone byte at the start of file", buffer[i]);
+        } else if i + 1 >= buffer.len() {
+            println!("{:02X}__: Lone byte at the end of file", buffer[i]);
+        } else {
+            let value = u16::from_be_bytes([buffer[i], buffer[i + 1]]);
+            print!("{:04X}: ", value);
+
+            match Opcode::decode(value) {
+                Err(x) => println!("{} {}", Red.paint("ERROR"), Red.paint(x.to_string())),
+                Ok(x) => println!("{}", color_opcode(x)),
+            };
+        };
+
+        i += if i == 0 && offset { 1 } else { 2 };
     }
 
     Ok(())
