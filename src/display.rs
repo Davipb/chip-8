@@ -172,6 +172,7 @@ impl VideoListener for TerminalVideoListener {
         csi(b"2J")?; // Clear screen
         csi(b"H")?; // Cursor to top-left
         csi(b"?25l")?; // Hide cursor
+        io::stdout().write(b"\x1B]2;CHIP8\x07")?; // Set window title
         flush()?;
 
         self.started = true;
